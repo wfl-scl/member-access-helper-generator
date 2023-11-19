@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.7.34221.43
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MemberAccessHelperGenerator", "MemberAccessHelperGenerator.csproj", "{E57FD9CD-AE04-476A-8BC7-76CDDB29BB85}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MemberAccessHelperGenerator", "MemberAccessHelperGenerator\MemberAccessHelperGenerator.csproj", "{E57FD9CD-AE04-476A-8BC7-76CDDB29BB85}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
