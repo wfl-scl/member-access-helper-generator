@@ -15,10 +15,10 @@ internal static partial class Generator {
 		BindingFlags.Static |
 		BindingFlags.Instance;
 
-	private static readonly Type[] excludeTypes = new[] {
+	private static readonly Type[] excludeTypes = [
 		typeof(Delegate),
 		typeof(Attribute)
-	};
+	];
 
 	[GeneratedRegex(@"`(\d+)")]
 	private static partial Regex genericTypeArgumentRegex();
@@ -550,15 +550,14 @@ internal static partial class Generator {
 				if (parameters.Length > 0) {
 					parameterTypes = $$"""
 										types: new {{typeof(Type).FullName}}[] {
-											{{
-												string.Join(
-													",\n\t\t\t\t\t",
-													parameters.Select(x => string.Format(
-														"typeof({0}){1}",
-														getTypeName(x.ParameterType.IsByRef ? x.ParameterType.GetElementType()! : x.ParameterType),
-														x.ParameterType.IsByRef ? $".{nameof(Type.MakeByRefType)}()" : string.Empty
-													))
-												)}}
+											{{string.Join(
+												",\n\t\t\t\t\t",
+												parameters.Select(x => string.Format(
+													"typeof({0}){1}",
+													getTypeName(x.ParameterType.IsByRef ? x.ParameterType.GetElementType()! : x.ParameterType),
+													x.ParameterType.IsByRef ? $".{nameof(Type.MakeByRefType)}()" : string.Empty
+												))
+											)}}
 										}
 						""";
 				} else {
