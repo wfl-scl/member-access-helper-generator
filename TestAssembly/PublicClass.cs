@@ -2,13 +2,13 @@
 
 public class PublicClass {
 
-	public static int PublicStaticIntProperty { get; set; }
+	public static int PublicStaticIntProperty { get; set; } = 1;
 
-	public int PublicIntProperty { get; set; }
+	public int PublicIntProperty { get; set; } = 2;
 
-	public int PublicPrivateIntProperty { get; private set; }
+	public int PublicPrivateIntProperty { get; private set; } = 3;
 
-	public List<int>? PublicGenericProperty { get; set; }
+	public List<int>? PublicGenericProperty { get; set; } = [4];
 
 	public ref int PublicRefIntProperty {
 		get => ref privateIntField;
@@ -18,18 +18,18 @@ public class PublicClass {
 		get => ref privateIntField;
 	}
 
-	internal int InternalIntProperty { get; set; }
+	internal int InternalIntProperty { get; set; } = 5;
 
-	internal InternalStruct InternalUnknownProperty { get; set; }
+	internal InternalStruct InternalUnknownProperty { get; set; } = new() { Value = 6 };
 
 	internal ref InternalStruct InternalRefUnknownProperty {
 		get => ref privateUnknownField;
 	}
 
 
-	private int privateIntField = 5;
+	private int privateIntField = 7;
 
-	private InternalStruct privateUnknownField;
+	private InternalStruct privateUnknownField = new() { Value = 8 };
 
 
 	public void PublicVoidMethod() {
