@@ -310,8 +310,8 @@ internal static partial class Generator {
 
 								public delegate {{propertyType}} {{delegateName}}({{(isStatic ? string.Empty : $"{declaringTypeName} instance")}});
 
-								public static {{delegateName}} {{methodName}} =
-									({{delegateName}}){{property.Name}}.{{nameof(PropertyInfo.GetMethod)}}.{{nameof(MethodInfo.CreateDelegate)}}(typeof({{delegateName}}));
+								public static {{delegateName}} {{methodName}} { get; } =
+									{{property.Name}}.{{nameof(PropertyInfo.GetMethod)}}.{{nameof(MethodInfo.CreateDelegate)}}<{{delegateName}}>();
 
 						""";
 					break;
@@ -321,8 +321,8 @@ internal static partial class Generator {
 
 								public delegate void {{delegateName}}({{(isStatic ? string.Empty : $"{declaringTypeName} instance, ")}}{{propertyType}} value);
 
-								public static {{delegateName}} {{methodName}} =
-									({{delegateName}}){{property.Name}}.{{nameof(PropertyInfo.SetMethod)}}.{{nameof(MethodInfo.CreateDelegate)}}(typeof({{delegateName}}));
+								public static {{delegateName}} {{methodName}} { get; } =
+									{{property.Name}}.{{nameof(PropertyInfo.SetMethod)}}.{{nameof(MethodInfo.CreateDelegate)}}<{{delegateName}}>();
 
 						""";
 					break;
