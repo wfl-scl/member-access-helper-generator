@@ -5,7 +5,13 @@ VisualStudioVersion = 17.7.34221.43
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MemberAccessHelperGenerator", "MemberAccessHelperGenerator\MemberAccessHelperGenerator.csproj", "{E57FD9CD-AE04-476A-8BC7-76CDDB29BB85}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestAssembly", "TestAssembly\TestAssembly.csproj", "{8B6B237D-8E4A-4AB5-9659-B6870B92B008}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TestAssembly", "TestAssembly\TestAssembly.csproj", "{8B6B237D-8E4A-4AB5-9659-B6870B92B008}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MemberAccessHelperGenerator.Tests", "MemberAccessHelperGenerator.Tests\MemberAccessHelperGenerator.Tests.csproj", "{B94F027E-325D-457B-A638-99EEA9C3B703}"
+	ProjectSection(ProjectDependencies) = postProject
+		{8B6B237D-8E4A-4AB5-9659-B6870B92B008} = {8B6B237D-8E4A-4AB5-9659-B6870B92B008}
+		{E57FD9CD-AE04-476A-8BC7-76CDDB29BB85} = {E57FD9CD-AE04-476A-8BC7-76CDDB29BB85}
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,6 +27,10 @@ Global
 		{8B6B237D-8E4A-4AB5-9659-B6870B92B008}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{8B6B237D-8E4A-4AB5-9659-B6870B92B008}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{8B6B237D-8E4A-4AB5-9659-B6870B92B008}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B94F027E-325D-457B-A638-99EEA9C3B703}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B94F027E-325D-457B-A638-99EEA9C3B703}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B94F027E-325D-457B-A638-99EEA9C3B703}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B94F027E-325D-457B-A638-99EEA9C3B703}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -20,6 +20,10 @@ public class PublicClass {
 
 	internal int InternalIntProperty { get; set; } = 5;
 
+	internal ref int InternalRefIntProperty {
+		get => ref privateIntField;
+	}
+
 	internal InternalStruct InternalUnknownProperty { get; set; } = new() { Value = 6 };
 
 	internal ref InternalStruct InternalRefUnknownProperty {
@@ -34,6 +38,10 @@ public class PublicClass {
 
 	public void PublicVoidMethod() {
 		privateIntField = 350;
+	}
+
+	public int PublicIntMethod(int parameter) {
+		return PublicIntProperty + parameter;
 	}
 
 	public ref readonly int PublicRefMethod(
