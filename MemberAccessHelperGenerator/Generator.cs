@@ -15,6 +15,11 @@ internal static partial class Generator {
 		BindingFlags.Static |
 		BindingFlags.Instance;
 
+	private enum PropertyMethodType {
+		Get,
+		Set
+	}
+
 	private static readonly Type[] excludeTypes = [
 		typeof(Delegate),
 		typeof(Attribute)
@@ -242,6 +247,8 @@ internal static partial class Generator {
 			source += $$"""
 					public static class ReflectionMembers {
 
+						public static {{typeof(Type).FullName}} Type { get; } = typeof({{typeFullName}});
+
 				{{reflectionMembers}}
 					}
 
@@ -266,11 +273,6 @@ internal static partial class Generator {
 		return true;
 	}
 
-	private enum PropertyMethodType {
-		Get,
-		Set
-	}
-
 	private static string toPropertyDeclaration(
 		PropertyInfo property,
 		out string? reflectionMemberDeclaration
@@ -280,6 +282,13 @@ internal static partial class Generator {
 			isStatic = property.GetMethod!.IsStatic;
 		} else {
 			isStatic = property.SetMethod!.IsStatic;
+		}
+		bool isPublic = false;
+		if (property.CanRead) {
+			isPublic |= property.GetMethod!.IsPublic;
+		}
+		if (property.CanWrite) {
+			isPublic |= property.SetMethod!.IsPublic;
 		}
 
 		var isReadOnly = property.CustomAttributes.Any(x => x.AttributeType == typeof(IsReadOnlyAttribute));
@@ -291,33 +300,43 @@ internal static partial class Generator {
 
 		reflectionMemberDeclaration = null;
 
-		void addReflectionMember(ref string? declaration, PropertyMethodType methodType) {
+		void addReflectionMember(ref string? declaration, PropertyMethodType methodType, out string? methodName) {
 			declaration ??= $$"""
-						public static readonly {{typeof(PropertyInfo).FullName}} {{property.Name}} =
-							typeof({{declaringTypeName}}).{{nameof(Type.GetProperty)}}("{{property.Name}}", {{getBindingFlagsString(isStatic)}});
+						public static {{typeof(PropertyInfo).FullName}} {{property.Name}} { get; } =
+							Type.{{nameof(Type.GetProperty)}}(
+								"{{property.Name}}",
+								{{getBindingFlagsString(isPublic, isStatic)}}
+							);
 
 				""";
 
 			if (!property.PropertyType.IsVisible) {
 				// 不明な型の場合はデリゲート作れない？
+				methodName = null;
 				return;
 			}
 
-			var methodName = $"{property.Name}_{methodType}";
+			methodName = $"{property.Name}_{methodType}";
 			var delegateName = $"{methodName}Delegate";
 			switch (methodType) {
 				case PropertyMethodType.Get:
 					declaration += $$"""
+
 								public delegate {{propertyType}} {{delegateName}}({{(isStatic ? string.Empty : $"{declaringTypeName} instance")}});
-								public {{delegateName}} {{methodName}} = {{property.Name}}.{{nameof(PropertyInfo.GetMethod)}}.{{nameof(MethodInfo.CreateDelegate)}}(typeof({{delegateName}}));
+
+								public static {{delegateName}} {{methodName}} =
+									({{delegateName}}){{property.Name}}.{{nameof(PropertyInfo.GetMethod)}}.{{nameof(MethodInfo.CreateDelegate)}}(typeof({{delegateName}}));
 
 						""";
 					break;
 
 				case PropertyMethodType.Set:
 					declaration += $$"""
+
 								public delegate void {{delegateName}}({{(isStatic ? string.Empty : $"{declaringTypeName} instance, ")}}{{propertyType}} value);
-								public {{delegateName}} {{methodName}} = {{property.Name}}.{{nameof(PropertyInfo.SetMethod)}}.{{nameof(MethodInfo.CreateDelegate)}}(typeof({{delegateName}}));
+
+								public static {{delegateName}} {{methodName}} =
+									({{delegateName}}){{property.Name}}.{{nameof(PropertyInfo.SetMethod)}}.{{nameof(MethodInfo.CreateDelegate)}}(typeof({{delegateName}}));
 
 						""";
 					break;
@@ -330,14 +349,17 @@ internal static partial class Generator {
 		if (property.CanRead) {
 			string getter;
 			if (property.GetMethod!.IsPublic) {
-				var prefix = getMemberPrefix(declaringType, isStatic);
-				getter = $"{prefix}.{property.Name}";
+				var prefix = getMemberAccessPrefix(declaringType, isStatic);
+				getter = $"{(property.PropertyType.IsByRef ? "ref " : string.Empty)}{prefix}.{property.Name}";
 			} else {
+				addReflectionMember(ref reflectionMemberDeclaration, PropertyMethodType.Get, out var methodName);
 				var instance = isStatic ? "null" : instancePropertyName;
-				var cast = getCastString(property.PropertyType);
-				getter = $"{cast}ReflectionMembers.{property.Name}.{nameof(PropertyInfo.GetValue)}({instance})";
-
-				addReflectionMember(ref reflectionMemberDeclaration, PropertyMethodType.Get);
+				if (methodName != null) {
+					getter = $"{(property.PropertyType.IsByRef ? "ref " : string.Empty)}ReflectionMembers.{methodName}({instance})";
+				} else {
+					var cast = getCastString(property.PropertyType);
+					getter = $"{cast}ReflectionMembers.{property.Name}.{nameof(PropertyInfo.GetValue)}({instance})";
+				}
 			}
 			declaration += $"\t\tget => {getter};\n";
 		}
@@ -345,13 +367,16 @@ internal static partial class Generator {
 		if (property.CanWrite) {
 			string setter;
 			if (property.SetMethod!.IsPublic) {
-				var prefix = getMemberPrefix(declaringType, isStatic);
+				var prefix = getMemberAccessPrefix(declaringType, isStatic);
 				setter = $"{prefix}.{property.Name} = value";
 			} else {
+				addReflectionMember(ref reflectionMemberDeclaration, PropertyMethodType.Set, out var methodName);
 				var instance = isStatic ? "null" : instancePropertyName;
-				setter = $"ReflectionMembers.{property.Name}.{nameof(PropertyInfo.SetValue)}({instance}, value)";
-
-				addReflectionMember(ref reflectionMemberDeclaration, PropertyMethodType.Set);
+				if (methodName != null) {
+					setter = $"ReflectionMembers.{methodName}({instance}, value)";
+				} else {
+					setter = $"ReflectionMembers.{property.Name}.{nameof(PropertyInfo.SetValue)}({instance}, value)";
+				}
 			}
 			declaration += $"\t\tset => {setter};\n";
 		}
@@ -369,7 +394,7 @@ internal static partial class Generator {
 
 		string getter, setter;
 		if (field.IsPublic) {
-			var prefix = getMemberPrefix(declaringType, field.IsStatic);
+			var prefix = getMemberAccessPrefix(declaringType, field.IsStatic);
 			getter = $"{prefix}.{field.Name}";
 			setter = $"{prefix}.{field.Name} = value";
 
@@ -381,8 +406,11 @@ internal static partial class Generator {
 			setter = $"ReflectionMembers.{field.Name}.{nameof(PropertyInfo.SetValue)}({instance}, value)";
 
 			reflectionMemberDeclaration = $$"""
-						public static readonly {{typeof(FieldInfo).FullName}} {{field.Name}} =
-							typeof({{getTypeName(declaringType)}}).{{nameof(Type.GetField)}}("{{field.Name}}", {{getBindingFlagsString(field.IsStatic)}});
+						public static {{typeof(FieldInfo).FullName}} {{field.Name}} { get; } =
+							Type.{{nameof(Type.GetField)}}(
+								"{{field.Name}}",
+								{{getBindingFlagsString(field.IsPublic, field.IsStatic)}}
+							);
 
 				""";
 		}
@@ -469,9 +497,9 @@ internal static partial class Generator {
 			if (method.ReturnType == typeof(void)) {
 				declaration += "\t\t";
 			} else {
-				declaration += "\t\treturn ";
+				declaration += $"\t\treturn {(method.ReturnType.IsByRef ? "ref " : string.Empty)}";
 			}
-			declaration += $"{getMemberPrefix(declaringType, method.IsStatic)}.{methodName}(";
+			declaration += $"{getMemberAccessPrefix(declaringType, method.IsStatic)}.{methodName}(";
 			if (parameters.Length > 0) {
 				var parameterValues = string.Join(
 					",\n\t\t\t",
@@ -565,10 +593,10 @@ internal static partial class Generator {
 					parameterTypes = $"\t\t\t\ttypes: {typeof(Type).FullName}.{nameof(Type.EmptyTypes)}";
 				}
 				reflectionMemberDeclaration = $$"""
-							public static readonly {{typeof(MethodInfo).FullName}} {{reflectionMemberName}} =
-								typeof({{getTypeName(declaringType)}}).{{nameof(Type.GetMethod)}}(
+							public static {{typeof(MethodInfo).FullName}} {{reflectionMemberName}} { get; } =
+								Type.{{nameof(Type.GetMethod)}}(
 									"{{method.Name}}",
-									{{getBindingFlagsString(method.IsStatic)}},
+									{{getBindingFlagsString(method.IsPublic, method.IsStatic)}},
 									binder: null,
 					{{parameterTypes}},
 									modifiers: null
@@ -577,8 +605,11 @@ internal static partial class Generator {
 					""";
 			} else {
 				reflectionMemberDeclaration = $$"""
-							public static readonly {{typeof(MethodInfo).FullName}} {{reflectionMemberName}} =
-								typeof({{getTypeName(declaringType)}}).{{nameof(Type.GetMethod)}}("{{method.Name}}", {{getBindingFlagsString(method.IsStatic)}});
+							public static {{typeof(MethodInfo).FullName}} {{reflectionMemberName}} { get; } =
+								Type.{{nameof(Type.GetMethod)}}(
+									"{{method.Name}}",
+									{{getBindingFlagsString(method.IsPublic, method.IsStatic)}}
+								);
 
 					""";
 			}
@@ -743,20 +774,30 @@ internal static partial class Generator {
 		return parameters;
 	}
 
-	private static string getMemberPrefix(Type declaringType, bool isStatic) {
+	private static string getMemberAccessPrefix(Type declaringType, bool isStatic) {
 		return isStatic ? getTypeName(declaringType) : instancePropertyName;
 	}
 
-	private static string getBindingFlagsString(bool isStatic) {
-		var flagsTypeName = typeof(BindingFlags).FullName;
-		return $"{flagsTypeName}.{BindingFlags.NonPublic} | {flagsTypeName}.{(isStatic ? BindingFlags.Static : BindingFlags.Instance)}";
+	private static string getBindingFlagsString(bool isPublic, bool isStatic) {
+		return string.Format(
+			"{0}.{1} | {0}.{2}",
+			typeof(BindingFlags).FullName,
+			isPublic ? BindingFlags.Public : BindingFlags.NonPublic,
+			isStatic ? BindingFlags.Static : BindingFlags.Instance
+		);
 	}
 
 	private static string getCastString(Type resultType) {
-		return resultType != typeof(object) ? $"({getTypeName(resultType)})" : string.Empty;
+		// 不明な型はobjectのまま返すのでキャストしない
+		return (resultType.IsVisible && resultType != typeof(object)) ?
+			$"({getTypeName(resultType)})" :
+			string.Empty;
 	}
 
 	private static string getReturnTypeString(Type type, bool isReadOnly) {
+		if (!type.IsVisible) {
+			return "object";
+		}
 		return string.Format(
 			"{0}{1}{2}",
 			type.IsByRef ? "ref " : string.Empty,
