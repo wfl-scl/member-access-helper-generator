@@ -277,22 +277,8 @@ internal static partial class Generator {
 		PropertyInfo property,
 		out string? reflectionMemberDeclaration
 	) {
-		bool isStatic;
-		if (property.CanRead) {
-			isStatic = property.GetMethod!.IsStatic;
-		} else {
-			isStatic = property.SetMethod!.IsStatic;
-		}
-		bool isPublic = false;
-		if (property.CanRead) {
-			isPublic |= property.GetMethod!.IsPublic;
-		}
-		if (property.CanWrite) {
-			isPublic |= property.SetMethod!.IsPublic;
-		}
-
-		var isReadOnly = property.CustomAttributes.Any(x => x.AttributeType == typeof(IsReadOnlyAttribute));
-		var propertyType = getReturnTypeString(property.PropertyType, isReadOnly);
+		var isStatic = property.IsStatic();
+		var propertyType = getReturnTypeString(property.PropertyType, property.IsReadOnly());
 		var declaration = $"\tpublic {(isStatic ? "static " : string.Empty)}{propertyType} {property.Name} {{\n";
 
 		Type declaringType = property.DeclaringType!;
@@ -305,7 +291,7 @@ internal static partial class Generator {
 						public static {{typeof(PropertyInfo).FullName}} {{property.Name}} { get; } =
 							Type.{{nameof(Type.GetProperty)}}(
 								"{{property.Name}}",
-								{{getBindingFlagsString(isPublic, isStatic)}}
+								{{getBindingFlagsString(property.IsPublic(), isStatic)}}
 							);
 
 				""";
