@@ -131,6 +131,12 @@ public class Helper {
 	}
 
 	[Fact]
+	public void PublicGenericMethod() {
+		PublicClassHelper helper = new(new());
+		helper.PublicGenericMethod<string, int>("Test").Should().Be(default);
+	}
+
+	[Fact]
 	public void PublicRefMethod() {
 		PublicClassHelper helper = new(new()) {
 			privateIntField = 123
@@ -138,6 +144,26 @@ public class Helper {
 		int inParameter = 456;
 		int refParameter = 789;
 		ref readonly var result = ref helper.PublicRefMethod(
+			in inParameter,
+			out var outParameter,
+			ref refParameter
+		);
+		outParameter.Should().Be(inParameter);
+		refParameter.Should().Be(100);
+		result.Should().Be(123);
+
+		helper.privateIntField = 1234;
+		result.Should().Be(1234);
+	}
+
+	[Fact]
+	public void InternalRefMethod() {
+		PublicClassHelper helper = new(new()) {
+			privateIntField = 123
+		};
+		int inParameter = 456;
+		int refParameter = 789;
+		ref readonly var result = ref helper.InternalRefMethod(
 			in inParameter,
 			out var outParameter,
 			ref refParameter

@@ -44,6 +44,12 @@ public class PublicClass {
 		return PublicIntProperty + parameter;
 	}
 
+	public TReturn PublicGenericMethod<TParameter, TReturn>(
+		TParameter parameter
+	) where TParameter : IEquatable<TParameter> where TReturn : struct {
+		return (PublicIntProperty == 0 || parameter.Equals(parameter)) ? default : default;
+	}
+
 	public ref readonly int PublicRefMethod(
 		in int inParameter,
 		out int outParameter,
@@ -52,6 +58,14 @@ public class PublicClass {
 		outParameter = inParameter;
 		refParameter = 100;
 		return ref privateIntField;
+	}
+
+	internal ref readonly int InternalRefMethod(
+		in int inParameter,
+		out int outParameter,
+		ref int refParameter
+	) {
+		return ref PublicRefMethod(in inParameter, out outParameter, ref refParameter);
 	}
 
 	internal static InternalStruct InternalStaticUnknownMethod(

@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 namespace MemberAccessHelperGenerator;
 
-internal static partial class Generator {
+internal static class Generator {
 
 	private const string defaultOutputFolder = @".\Generated";
 	private const string instancePropertyName = "InstanceForHelper";
@@ -24,9 +24,6 @@ internal static partial class Generator {
 		typeof(Delegate),
 		typeof(Attribute)
 	];
-
-	[GeneratedRegex(@"`(\d+)")]
-	private static partial Regex genericTypeArgumentRegex();
 
 
 	public static void Run(
@@ -166,7 +163,7 @@ internal static partial class Generator {
 			if (
 				methodInfo.Any(x =>
 					x != method &&
-					isSameSignature(x, method) &&
+					x.IsSameSignature(method) &&
 					x.DeclaringType?.IsAssignableTo(method.DeclaringType) == true
 				)
 			) {
@@ -177,7 +174,7 @@ internal static partial class Generator {
 			var overloads = methodInfo
 				.Where(x =>
 					x == method ||
-					(x.Name == method.Name && !isSameSignature(x, method))
+					(x.Name == method.Name && !x.IsSameSignature(method))
 				)
 				.ToArray();
 
@@ -197,7 +194,7 @@ internal static partial class Generator {
 			string.Empty :
 			$"\nnamespace {type.Namespace};\n";
 
-		var typeFullName = getTypeName(type);
+		var typeFullName = type.GetTypeName();
 		var helperClassName = $"{typeFullName}Helper";
 		if (type.Namespace != null) {
 			helperClassName = helperClassName.Replace($"{type.Namespace}.", string.Empty);
@@ -278,11 +275,11 @@ internal static partial class Generator {
 		out string? reflectionMemberDeclaration
 	) {
 		var isStatic = property.IsStatic();
-		var propertyType = getReturnTypeString(property.PropertyType, property.IsReadOnly());
+		var propertyType = property.PropertyType.GetReturnTypeString(property.IsReadOnly());
 		var declaration = $"\tpublic {(isStatic ? "static " : string.Empty)}{propertyType} {property.Name} {{\n";
 
 		Type declaringType = property.DeclaringType!;
-		var declaringTypeName = getTypeName(declaringType);
+		var declaringTypeName = declaringType.GetTypeName();
 
 		reflectionMemberDeclaration = null;
 
@@ -303,7 +300,7 @@ internal static partial class Generator {
 			}
 
 			methodName = $"{property.Name}_{methodType}";
-			var delegateName = $"{methodName}Delegate";
+			var delegateName = $"{methodName}_Delegate";
 			switch (methodType) {
 				case PropertyMethodType.Get:
 					declaration += $$"""
@@ -343,7 +340,7 @@ internal static partial class Generator {
 				if (methodName != null) {
 					getter = $"{(property.PropertyType.IsByRef ? "ref " : string.Empty)}ReflectionMembers.{methodName}({instance})";
 				} else {
-					var cast = getCastString(property.PropertyType);
+					var cast = property.PropertyType.GetCastString();
 					getter = $"{cast}ReflectionMembers.{property.Name}.{nameof(PropertyInfo.GetValue)}({instance})";
 				}
 			}
@@ -375,7 +372,7 @@ internal static partial class Generator {
 		FieldInfo field,
 		out string? reflectionMemberDeclaration
 	) {
-		var typeName = getTypeName(field.FieldType);
+		var typeName = field.FieldType.GetTypeName();
 		var declaringType = field.DeclaringType!;
 
 		string getter, setter;
@@ -387,7 +384,7 @@ internal static partial class Generator {
 			reflectionMemberDeclaration = null;
 		} else {
 			var instance = field.IsStatic ? "null" : instancePropertyName;
-			var cast = getCastString(field.FieldType);
+			var cast = field.FieldType.GetCastString();
 			getter = $"{cast}ReflectionMembers.{field.Name}.{nameof(PropertyInfo.GetValue)}({instance})";
 			setter = $"ReflectionMembers.{field.Name}.{nameof(PropertyInfo.SetValue)}({instance}, value)";
 
@@ -426,22 +423,14 @@ internal static partial class Generator {
 			.OfType<IsReadOnlyAttribute>()
 			.Any();
 
-		var returnType = getReturnTypeString(method.ReturnType, isReadOnlyReturnType);
+		var returnType = method.ReturnType.GetReturnTypeString(isReadOnlyReturnType);
 
-		string methodName, where;
+		string genericParameters, methodName, where;
 		if (method.IsGenericMethod) {
-			var genericArguments = method.GetGenericArguments();
-			methodName = $"{method.Name}<{string.Join(",", genericArguments.Select(getTypeName))}>";
-			where = string.Concat(
-				genericArguments
-					.Select(type => (
-						GenericTypeName: type.Name,
-						Parameters: getWhereParameters(type)
-					))
-					.Where(x => x.Parameters != null)
-					.Select(x => $" where {x.GenericTypeName} : {x.Parameters}")
-			);
+			method.GetGenericArguments().GetGenericParameterString(out genericParameters, out where);
+			methodName = $"{method.Name}{genericParameters}";
 		} else {
+			genericParameters = string.Empty;
 			methodName = method.Name;
 			where = string.Empty;
 		}
@@ -451,30 +440,7 @@ internal static partial class Generator {
 
 		var parameters = method.GetParameters();
 		if (parameters.Length > 0) {
-			var parameterDeclaration = string.Join(
-				",\n\t\t",
-				parameters.Select(parameter => {
-					var parameterType = parameter.ParameterType;
-					var prefix = string.Empty;
-					if (parameter.IsIn) {
-						prefix = "in ";
-						parameterType = parameterType.GetElementType()!;
-					} else if (parameter.IsOut) {
-						prefix = "out ";
-						parameterType = parameterType.GetElementType()!;
-					} else if (parameterType.IsByRef) {
-						prefix = "ref ";
-						parameterType = parameterType.GetElementType()!;
-					}
-					var suffix = string.Empty;
-					if (parameter.HasDefaultValue) {
-						suffix = $" = {valueToLiteral(parameter.DefaultValue, parameterType)}";
-					}
-					return $"{prefix}{getTypeName(parameterType)} {parameter.Name}{suffix}";
-				})
-			);
-
-			declaration += $"\n\t\t{parameterDeclaration}\n\t";
+			declaration += $"\n\t\t{string.Join(",\n\t\t", method.GetParameterStrings())}\n\t";
 		}
 
 		declaration += $"){where} {{\n";
@@ -487,76 +453,101 @@ internal static partial class Generator {
 			}
 			declaration += $"{getMemberAccessPrefix(declaringType, method.IsStatic)}.{methodName}(";
 			if (parameters.Length > 0) {
-				var parameterValues = string.Join(
-					",\n\t\t\t",
-					parameters.Select(parameter => {
-						var prefix = string.Empty;
-						if (parameter.IsIn) {
-							prefix = "in ";
-						} else if (parameter.IsOut) {
-							prefix = "out ";
-						} else if (parameter.ParameterType.IsByRef) {
-							prefix = "ref ";
-						}
-						return $"{prefix}{parameter.Name}";
-					})
-				);
-				declaration += $"\n\t\t\t{parameterValues}\n\t\t";
+				declaration += $"\n\t\t\t{string.Join(",\n\t\t\t", method.GetArgumentStrings())}\n\t\t";
 			}
 			declaration += ");\n";
 
 			reflectionMemberDeclaration = null;
 		} else {
-			var instance = method.IsStatic ? "null" : instancePropertyName;
-
-			string result;
-			if (method.ReturnType == typeof(void)) {
-				result = string.Empty;
-			} else {
-				result = $"var result = {getCastString(method.ReturnType)}";
-			}
-
 			// オーバーロードがある場合は後ろに数字つける
 			var reflectionMemberName = overloadIndex != -1 ?
 				$"{method.Name}_{overloadIndex}" :
 				method.Name;
 
-			if (parameters.Length > 0) {
-				var parameterValues = string.Join(
-					",\n\t\t\t",
-					parameters.Select(parameter =>
-						parameter.IsOut ? "null" : parameter.Name
-					)
-				);
-				declaration += $$"""
-							var parameters = new object[] {
-								{{parameterValues}}
-							};
-							{{result}}ReflectionMembers.{{reflectionMemberName}}.{{nameof(MethodInfo.Invoke)}}({{instance}}, parameters);
+			if (method.IsTypeVisible()) {
+				// Delegate
+				if (method.ReturnType == typeof(void)) {
+					declaration += "\t\t";
+				} else {
+					declaration += $"\t\treturn {(method.ReturnType.IsByRef ? "ref " : string.Empty)}";
+				}
+				if (method.IsGenericMethod) {
+					declaration += $"ReflectionMembers.{reflectionMemberName}_Generic{genericParameters}.Method(";
+				} else {
+					declaration += $"ReflectionMembers.{reflectionMemberName}_Method(";
+				}
 
-					""";
+				IEnumerable<string> arguments;
+				if (!method.IsStatic) {
+					arguments = [instancePropertyName, ..method.GetArgumentStrings()];
+				} else {
+					arguments = method.GetArgumentStrings();
+				}
+				if (arguments.Any()) {
+					declaration += $"\n\t\t\t{string.Join(",\n\t\t\t", arguments)}\n\t\t";
+				}
+				declaration += ");\n";
 
-				// out変数の割り当て
-				declaration += string.Concat(
-					parameters
-						.Select((parameter, i) => (Index: i, Parameter: parameter))
-						.Where(x => x.Parameter.IsOut)
-						.Select(x => string.Format(
-							"\t\t{0} = {1}parameters[{2}];\n",
-							x.Parameter.Name,
-							getCastString(x.Parameter.ParameterType.GetElementType()!),
-							x.Index
-						))
-				);
 			} else {
-				declaration += $$"""
-							{{result}}ReflectionMembers.{{reflectionMemberName}}.{{nameof(MethodInfo.Invoke)}}({{instance}}, parameters: null);
+				// Reflection
+				var instance = method.IsStatic ? "null" : instancePropertyName;
 
-					""";
-			}
+				string result;
+				if (method.ReturnType == typeof(void)) {
+					result = string.Empty;
+				} else {
+					result = $"var result = {method.ReturnType.GetCastString()}";
+				}
 
-			if (method.ReturnType != typeof(void)) {
-				declaration += "\t\treturn result;\n";
+				string methodInfoAccess;
+				if (method.IsGenericMethod) {
+					methodInfoAccess = string.Format(
+						"{0}.{1}({2})",
+						reflectionMemberName,
+						nameof(MethodInfo.MakeGenericMethod),
+						string.Join(", ", method.GetGenericArguments().Select(x => $"typeof({x.Name})"))
+					);
+				} else {
+					methodInfoAccess = reflectionMemberName;
+				}
+
+				if (parameters.Length > 0) {
+					var parameterValues = string.Join(
+						",\n\t\t\t",
+						parameters.Select(parameter =>
+							parameter.IsOut ? "null" : parameter.Name
+						)
+					);
+					declaration += $$"""
+								var parameters = new object[] {
+									{{parameterValues}}
+								};
+								{{result}}ReflectionMembers.{{methodInfoAccess}}.{{nameof(MethodInfo.Invoke)}}({{instance}}, parameters);
+
+						""";
+
+					// out変数の割り当て
+					declaration += string.Concat(
+						parameters
+							.Select((parameter, i) => (Index: i, Parameter: parameter))
+							.Where(x => x.Parameter.IsOut)
+							.Select(x => string.Format(
+								"\t\t{0} = {1}parameters[{2}];\n",
+								x.Parameter.Name,
+								x.Parameter.ParameterType.GetElementType()!.GetCastString(),
+								x.Index
+							))
+					);
+				} else {
+					declaration += $$"""
+								{{result}}ReflectionMembers.{{methodInfoAccess}}.{{nameof(MethodInfo.Invoke)}}({{instance}}, parameters: null);
+
+						""";
+				}
+
+				if (method.ReturnType != typeof(void)) {
+					declaration += "\t\treturn result;\n";
+				}
 			}
 
 			if (overloadIndex != -1) {
@@ -568,7 +559,7 @@ internal static partial class Generator {
 												",\n\t\t\t\t\t",
 												parameters.Select(x => string.Format(
 													"typeof({0}){1}",
-													getTypeName(x.ParameterType.IsByRef ? x.ParameterType.GetElementType()! : x.ParameterType),
+													(x.ParameterType.IsByRef ? x.ParameterType.GetElementType()! : x.ParameterType).GetTypeName(),
 													x.ParameterType.IsByRef ? $".{nameof(Type.MakeByRefType)}()" : string.Empty
 												))
 											)}}
@@ -599,6 +590,60 @@ internal static partial class Generator {
 
 					""";
 			}
+
+			if (method.IsTypeVisible()) {
+				// 型が全部publicならデリゲート作る
+				var declaringTypeName = declaringType.GetTypeName();
+				var parameterStrings = method.GetParameterStrings(includeInstance: true);
+
+				string indent, delegateTypeName, delegateName, methodInfoAccess;
+				if (method.IsGenericMethod) {
+					// ジェネリックメソッドの場合はジェネリッククラスを定義する
+					// (ジェネリックのデリゲートは直接作れない)
+					indent = "\t\t\t";
+					delegateTypeName = "Delegate";
+					delegateName = "Method";
+					methodInfoAccess = string.Format(
+						"{0}.{1}({2})",
+						reflectionMemberName,
+						nameof(MethodInfo.MakeGenericMethod),
+						string.Join(", ", method.GetGenericArguments().Select(x => $"typeof({x.Name})"))
+					);
+					// クラス定義始め
+					reflectionMemberDeclaration += $"\n\t\tpublic static class {reflectionMemberName}_Generic{genericParameters}{where} {{\n";
+				} else {
+					indent = "\t\t";
+					delegateTypeName = $"{reflectionMemberName}_Delegate";
+					delegateName = $"{reflectionMemberName}_Method";
+					methodInfoAccess = reflectionMemberName;
+				}
+
+				var delegateDeclaration = string.Format(
+					"{0}public delegate {1} {2}({3});",
+					indent,
+					returnType,
+					delegateTypeName,
+					parameterStrings.Any() ?
+						$"\n{indent}\t{string.Join($",\n{indent}\t", parameterStrings)}\n{indent}" :
+						string.Empty
+				);
+
+				var methodDeclaration = string.Format(
+					"{0}public static {1} {2} {{ get; }} =\n{0}\t{3}.{4}<{1}>();",
+					indent,
+					delegateTypeName,
+					delegateName,
+					methodInfoAccess,
+					nameof(MethodInfo.CreateDelegate)
+				);
+
+				reflectionMemberDeclaration += $"\n{delegateDeclaration}\n\n{methodDeclaration}\n\n";
+
+				if (method.IsGenericMethod) {
+					// クラス定義終わり
+					reflectionMemberDeclaration += "\t\t}\n";
+				}
+			}
 		}
 
 		declaration += "\t}\n";
@@ -606,162 +651,8 @@ internal static partial class Generator {
 		return declaration;
 	}
 
-	private static string getTypeName(Type type) {
-		if (!type.IsVisible) {
-			return "object";
-		}
-		if (type.IsGenericParameter) {
-			// Tとかはそのままにする
-			return type.Name;
-		} else if (type.IsArray) {
-			var commaCount = type.GetArrayRank() - 1;
-			var elementTypeName = getTypeName(type.GetElementType()!);
-			if (commaCount > 0) {
-				return $"{elementTypeName}[{new string(',', commaCount)}]";
-			} else {
-				return $"{elementTypeName}[]";
-			}
-		} else if (type == typeof(void)) {
-			return "void";
-		} else if (type == typeof(sbyte)) {
-			return "sbyte";
-		} else if (type == typeof(byte)) {
-			return "byte";
-		} else if (type == typeof(short)) {
-			return "short";
-		} else if (type == typeof(ushort)) {
-			return "ushort";
-		} else if (type == typeof(int)) {
-			return "int";
-		} else if (type == typeof(uint)) {
-			return "uint";
-		} else if (type == typeof(long)) {
-			return "long";
-		} else if (type == typeof(ulong)) {
-			return "ulong";
-		} else if (type == typeof(char)) {
-			return "char";
-		} else if (type == typeof(float)) {
-			return "float";
-		} else if (type == typeof(double)) {
-			return "double";
-		} else if (type == typeof(bool)) {
-			return "bool";
-		} else if (type == typeof(decimal)) {
-			return "decimal";
-		} else if (type == typeof(string)) {
-			return "string";
-		}
-
-		string typeName;
-		if (type.FullName != null) {
-			typeName = type.FullName.Replace('+', '.');
-			if (!type.IsGenericType) {
-				return typeName;
-			}
-			var argumentsIndex = typeName.IndexOf('[');
-			if (argumentsIndex == -1) {
-				// ジェネリック型でも型パラメーター情報が無い場合がある
-				// (ジェネリックメソッドの引数や戻り値など)
-				return typeName;
-			}
-			// 型パラメーターを表す文字列を削除する
-			typeName = typeName[..argumentsIndex];
-
-		} else {
-			if (type.IsNested) {
-				typeName = $"{getTypeName(type.DeclaringType!)}.{type.Name}";
-			} else {
-				if (type.Namespace != null) {
-					typeName = $"{type.Namespace}.{type.Name}";
-				} else {
-					typeName = type.Name;
-				}
-			}
-		}
-
-		if (type.IsGenericType) {
-			// 型パラメーターを解決する
-			// (List`1 とかは List<int> のように変換される)
-			var genericTypeArguments = type.GetGenericArguments();
-			int i = 0;
-			while (i < genericTypeArguments.Length) {
-				var match = genericTypeArgumentRegex().Match(typeName);
-				var argumentsCount = int.Parse(match.Groups[1].Value);
-				var arguments = $"<{string.Join(", ", genericTypeArguments.Skip(i).Take(argumentsCount).Select(getTypeName))}>";
-
-				typeName = typeName.Remove(match.Index, match.Length).Insert(match.Index, arguments);
-
-				i += argumentsCount;
-			}
-		}
-		return typeName;
-	}
-
-	private static string valueToLiteral<T>(T value, Type type) {
-		if (!type.IsVisible) {
-			return "default";
-		}
-		return value switch {
-			null => type.IsValueType ? "default" : "null",
-			string str => $"\"{str}\"",
-			char c => $"'{c}'",
-			bool b => b.ToString().ToLower(),
-			float f => $"{f}f",
-			sbyte or byte or short or ushort or int or uint or long or ulong or double or decimal => value.ToString()!,
-			Enum flags => string.Join(
-				" | ",
-				flags.ToString().Split(", ").Select(flag => $"{getTypeName(flags.GetType())}.{flag}")
-			),
-			_ => throw new NotImplementedException(
-				$"Unknown value: {value.GetType().Name} ({value})"
-			)
-		};
-	}
-
-	private static bool isSameSignature(MethodInfo a, MethodInfo b) {
-		return
-			a.Name == b.Name &&
-			a.GetParameters().SequenceEqual(b.GetParameters()) &&
-			a.GetGenericArguments().SequenceEqual(b.GetGenericArguments());
-	}
-
-	private static string? getWhereParameters(Type type) {
-		string? parameters = null;
-		void addParameter(string parameter) {
-			if (parameters == null) {
-				parameters = parameter;
-			} else {
-				parameters += $", {parameter}";
-			}
-		}
-
-		var attributes = type.GenericParameterAttributes;
-
-		if (attributes.HasFlag(GenericParameterAttributes.ReferenceTypeConstraint)) {
-			addParameter("class");
-		} else if (attributes.HasFlag(GenericParameterAttributes.NotNullableValueTypeConstraint)) {
-			addParameter("struct");
-		}
-		foreach (var typeParameter in type.GetGenericParameterConstraints()) {
-			if (typeParameter == typeof(ValueType)) {
-				// struct 制約は型としても入ってる？
-				continue;
-			}
-			addParameter(getTypeName(typeParameter));
-		}
-		if (
-			!attributes.HasFlag(GenericParameterAttributes.NotNullableValueTypeConstraint) &&
-			attributes.HasFlag(GenericParameterAttributes.DefaultConstructorConstraint)
-		) {
-			addParameter("new()");
-		}
-
-		return parameters;
-	}
-
 	private static string getMemberAccessPrefix(Type declaringType, bool isStatic) {
-		return isStatic ? getTypeName(declaringType) : instancePropertyName;
+		return isStatic ? declaringType.GetTypeName() : instancePropertyName;
 	}
 
 	private static string getBindingFlagsString(bool isPublic, bool isStatic) {
@@ -770,25 +661,6 @@ internal static partial class Generator {
 			typeof(BindingFlags).FullName,
 			isPublic ? BindingFlags.Public : BindingFlags.NonPublic,
 			isStatic ? BindingFlags.Static : BindingFlags.Instance
-		);
-	}
-
-	private static string getCastString(Type resultType) {
-		// 不明な型はobjectのまま返すのでキャストしない
-		return (resultType.IsVisible && resultType != typeof(object)) ?
-			$"({getTypeName(resultType)})" :
-			string.Empty;
-	}
-
-	private static string getReturnTypeString(Type type, bool isReadOnly) {
-		if (!type.IsVisible) {
-			return "object";
-		}
-		return string.Format(
-			"{0}{1}{2}",
-			type.IsByRef ? "ref " : string.Empty,
-			isReadOnly ? "readonly " : string.Empty,
-			getTypeName(type.IsByRef ? type.GetElementType()! : type)
 		);
 	}
 
