@@ -28,6 +28,8 @@ internal static partial class TypeExtensions {
 			}
 		} else if (type == typeof(void)) {
 			return "void";
+		} else if (type == typeof(object)) {
+			return "object";
 		} else if (type == typeof(sbyte)) {
 			return "sbyte";
 		} else if (type == typeof(byte)) {
