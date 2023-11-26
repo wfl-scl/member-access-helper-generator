@@ -382,12 +382,21 @@ internal static class Generator {
 				getter = $"{(property.PropertyType.IsByRef ? "ref " : string.Empty)}{prefix}.{property.Name}";
 			} else {
 				addReflectionMember(ref reflectionMemberDeclaration, PropertyMethodType.Get, out var methodName);
-				var instance = isStatic ? "null" : instancePropertyName;
 				if (methodName != null) {
-					getter = $"{(property.PropertyType.IsByRef ? "ref " : string.Empty)}ReflectionMembers.{methodName}({instance})";
+					getter = string.Format(
+						"{0}ReflectionMembers.{1}({2})",
+						property.PropertyType.IsByRef ? "ref " : string.Empty,
+						methodName,
+						isStatic ? string.Empty : instancePropertyName
+					);
 				} else {
-					var cast = property.PropertyType.GetCastString();
-					getter = $"{cast}ReflectionMembers.{property.Name}.{nameof(PropertyInfo.GetValue)}({instance})";
+					getter = string.Format(
+						"{0}ReflectionMembers.{1}.{2}({3})",
+						property.PropertyType.GetCastString(),
+						property.Name,
+						nameof(PropertyInfo.GetValue),
+						isStatic ? "null" : instancePropertyName
+					);
 				}
 			}
 			declaration += $"\t\tget => {getter};\n";
@@ -400,11 +409,19 @@ internal static class Generator {
 				setter = $"{prefix}.{property.Name} = value";
 			} else {
 				addReflectionMember(ref reflectionMemberDeclaration, PropertyMethodType.Set, out var methodName);
-				var instance = isStatic ? "null" : instancePropertyName;
 				if (methodName != null) {
-					setter = $"ReflectionMembers.{methodName}({instance}, value)";
+					setter = string.Format(
+						"ReflectionMembers.{0}({1})",
+						methodName,
+						isStatic ? "value" : $"{instancePropertyName}, value"
+					);
 				} else {
-					setter = $"ReflectionMembers.{property.Name}.{nameof(PropertyInfo.SetValue)}({instance}, value)";
+					setter = string.Format(
+						"ReflectionMembers.{0}.{1}({2}, value)",
+						property.Name,
+						nameof(PropertyInfo.SetValue),
+						isStatic ? "null" : instancePropertyName
+					);
 				}
 			}
 			declaration += $"\t\tset => {setter};\n";
