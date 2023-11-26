@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 
@@ -246,6 +247,49 @@ internal static class Generator {
 
 						public static {{typeof(Type).FullName}} Type { get; } = typeof({{typeFullName}});
 
+						public static T CreateGetFieldMethod<T>(
+							{{typeof(FieldInfo).FullName}} field
+						) where T : {{typeof(Delegate).FullName}} {
+							{{typeof(DynamicMethod).FullName}} method = new(
+								name: $"{field.{{nameof(FieldInfo.Name)}}}_Get",
+								returnType: field.{{nameof(FieldInfo.FieldType)}},
+								parameterTypes: field.{{nameof(FieldInfo.IsStatic)}} ? null : [Type],
+								restrictedSkipVisibility: true
+							);
+							var generator = method.{{nameof(DynamicMethod.GetILGenerator)}}();
+							if (field.{{nameof(FieldInfo.IsStatic)}}) {
+								generator.{{nameof(ILGenerator.Emit)}}({{typeof(OpCodes).FullName}}.{{nameof(OpCodes.Ldsfld)}}, field);
+							} else {
+								generator.{{nameof(ILGenerator.Emit)}}({{typeof(OpCodes).FullName}}.{{nameof(OpCodes.Ldarg_0)}});
+								generator.{{nameof(ILGenerator.Emit)}}({{typeof(OpCodes).FullName}}.{{nameof(OpCodes.Ldfld)}}, field);
+							}
+							generator.{{nameof(ILGenerator.Emit)}}({{typeof(OpCodes).FullName}}.{{nameof(OpCodes.Ret)}});
+							return method.{{nameof(DynamicMethod.CreateDelegate)}}<T>();
+						}
+
+						public static T CreateSetFieldMethod<T>(
+							{{typeof(FieldInfo).FullName}} field
+						) where T : {{typeof(Delegate).FullName}} {
+							{{typeof(DynamicMethod).FullName}} method = new(
+								name: $"{field.{{nameof(FieldInfo.Name)}}}_Set",
+								returnType: null,
+								parameterTypes: field.{{nameof(FieldInfo.IsStatic)}} ? [field.{{nameof(FieldInfo.FieldType)}}] : [Type, field.{{nameof(FieldInfo.FieldType)}}],
+								restrictedSkipVisibility: true
+							);
+							var generator = method.{{nameof(DynamicMethod.GetILGenerator)}}();
+							if (field.{{nameof(FieldInfo.IsStatic)}}) {
+								generator.{{nameof(ILGenerator.Emit)}}({{typeof(OpCodes).FullName}}.{{nameof(OpCodes.Ldarg_0)}});
+								generator.{{nameof(ILGenerator.Emit)}}({{typeof(OpCodes).FullName}}.{{nameof(OpCodes.Stsfld)}}, field);
+							} else {
+								generator.{{nameof(ILGenerator.Emit)}}({{typeof(OpCodes).FullName}}.{{nameof(OpCodes.Ldarg_0)}});
+								generator.{{nameof(ILGenerator.Emit)}}({{typeof(OpCodes).FullName}}.{{nameof(OpCodes.Ldarg_1)}});
+								generator.{{nameof(ILGenerator.Emit)}}({{typeof(OpCodes).FullName}}.{{nameof(OpCodes.Stfld)}}, field);
+							}
+							generator.{{nameof(ILGenerator.Emit)}}({{typeof(OpCodes).FullName}}.{{nameof(OpCodes.Ret)}});
+							return method.{{nameof(DynamicMethod.CreateDelegate)}}<T>();
+						}
+
+
 				{{reflectionMembers}}
 					}
 
@@ -383,11 +427,6 @@ internal static class Generator {
 
 			reflectionMemberDeclaration = null;
 		} else {
-			var instance = field.IsStatic ? "null" : instancePropertyName;
-			var cast = field.FieldType.GetCastString();
-			getter = $"{cast}ReflectionMembers.{field.Name}.{nameof(PropertyInfo.GetValue)}({instance})";
-			setter = $"ReflectionMembers.{field.Name}.{nameof(PropertyInfo.SetValue)}({instance}, value)";
-
 			reflectionMemberDeclaration = $$"""
 						public static {{typeof(FieldInfo).FullName}} {{field.Name}} { get; } =
 							Type.{{nameof(Type.GetField)}}(
@@ -396,6 +435,36 @@ internal static class Generator {
 							);
 
 				""";
+
+			if (field.FieldType.IsVisible) {
+				var getDelegateType = field.IsStatic ?
+					typeof(Func<>).MakeGenericType(field.FieldType).GetTypeName() :
+					typeof(Func<,>).MakeGenericType(declaringType, field.FieldType).GetTypeName();
+
+				var setDelegateType = field.IsStatic ?
+					typeof(Action<>).MakeGenericType(field.FieldType).GetTypeName() :
+					typeof(Action<,>).MakeGenericType(declaringType, field.FieldType).GetTypeName();
+
+				reflectionMemberDeclaration += $$"""
+
+							public static {{getDelegateType}} {{field.Name}}_Get { get; } =
+								CreateGetFieldMethod<{{getDelegateType}}>({{field.Name}});
+
+							public static {{setDelegateType}} {{field.Name}}_Set { get; } =
+								CreateSetFieldMethod<{{setDelegateType}}>({{field.Name}});
+
+					""";
+
+				var instance = field.IsStatic ? string.Empty : instancePropertyName;
+				getter = $"ReflectionMembers.{field.Name}_Get({(field.IsStatic ? string.Empty : instancePropertyName)})";
+				setter = $"ReflectionMembers.{field.Name}_Set({(field.IsStatic ? "value" : $"{instancePropertyName}, value")})";
+
+			} else {
+				var instance = field.IsStatic ? "null" : instancePropertyName;
+				var cast = field.FieldType.GetCastString();
+				getter = $"{cast}ReflectionMembers.{field.Name}.{nameof(PropertyInfo.GetValue)}({instance})";
+				setter = $"ReflectionMembers.{field.Name}.{nameof(PropertyInfo.SetValue)}({instance}, value)";
+			}
 		}
 
 		var declaration = $$"""
