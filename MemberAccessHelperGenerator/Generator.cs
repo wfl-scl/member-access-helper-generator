@@ -26,6 +26,13 @@ internal static class Generator {
 		typeof(Attribute)
 	];
 
+	private static readonly string[] excludeMethods =
+		typeof(object)
+			.GetMethods()
+			.Select(x => x.Name)
+			.Distinct()
+			.ToArray();
+
 
 	public static void Run(
 		[Option("i", "Assembly file(s) or containing folder(s) to generate")] string input,
@@ -154,7 +161,9 @@ internal static class Generator {
 				// get/setメソッドなどは含めない
 				method.IsSpecialName ||
 				// 明示的に実装されたインターフェースのメソッドは含めない
-				explicitInterfaceMethods.Contains(method)
+				explicitInterfaceMethods.Contains(method) ||
+				// 除外指定されたメソッドは含めない
+				excludeMethods.Contains(method.Name)
 			) {
 				continue;
 			}
