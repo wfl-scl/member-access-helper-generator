@@ -245,15 +245,15 @@ internal static class Generator {
 			source += $$"""
 					public static class ReflectionMembers {
 
-						public static {{typeof(Type).FullName}} Type { get; } = typeof({{typeFullName}});
-
 						public static T CreateGetFieldMethod<T>(
 							{{typeof(FieldInfo).FullName}} field
 						) where T : {{typeof(Delegate).FullName}} {
 							{{typeof(DynamicMethod).FullName}} method = new(
 								name: $"{field.{{nameof(FieldInfo.Name)}}}_Get",
 								returnType: field.{{nameof(FieldInfo.FieldType)}},
-								parameterTypes: field.{{nameof(FieldInfo.IsStatic)}} ? null : [Type],
+								parameterTypes: field.{{nameof(FieldInfo.IsStatic)}} ?
+									null :
+									[typeof({{typeFullName}})],
 								restrictedSkipVisibility: true
 							);
 							var generator = method.{{nameof(DynamicMethod.GetILGenerator)}}();
@@ -264,7 +264,7 @@ internal static class Generator {
 								generator.{{nameof(ILGenerator.Emit)}}({{typeof(OpCodes).FullName}}.{{nameof(OpCodes.Ldfld)}}, field);
 							}
 							generator.{{nameof(ILGenerator.Emit)}}({{typeof(OpCodes).FullName}}.{{nameof(OpCodes.Ret)}});
-							return method.{{nameof(DynamicMethod.CreateDelegate)}}<T>();
+							return (T)method.{{nameof(DynamicMethod.CreateDelegate)}}(typeof(T));
 						}
 
 						public static T CreateSetFieldMethod<T>(
@@ -273,7 +273,9 @@ internal static class Generator {
 							{{typeof(DynamicMethod).FullName}} method = new(
 								name: $"{field.{{nameof(FieldInfo.Name)}}}_Set",
 								returnType: null,
-								parameterTypes: field.{{nameof(FieldInfo.IsStatic)}} ? [field.{{nameof(FieldInfo.FieldType)}}] : [Type, field.{{nameof(FieldInfo.FieldType)}}],
+								parameterTypes: field.{{nameof(FieldInfo.IsStatic)}} ?
+									[field.{{nameof(FieldInfo.FieldType)}}] :
+									[typeof({{typeFullName}}), field.{{nameof(FieldInfo.FieldType)}}],
 								restrictedSkipVisibility: true
 							);
 							var generator = method.{{nameof(DynamicMethod.GetILGenerator)}}();
@@ -286,7 +288,7 @@ internal static class Generator {
 								generator.{{nameof(ILGenerator.Emit)}}({{typeof(OpCodes).FullName}}.{{nameof(OpCodes.Stfld)}}, field);
 							}
 							generator.{{nameof(ILGenerator.Emit)}}({{typeof(OpCodes).FullName}}.{{nameof(OpCodes.Ret)}});
-							return method.{{nameof(DynamicMethod.CreateDelegate)}}<T>();
+							return (T)method.{{nameof(DynamicMethod.CreateDelegate)}}(typeof(T));
 						}
 
 
@@ -330,7 +332,7 @@ internal static class Generator {
 		void addReflectionMember(ref string? declaration, PropertyMethodType methodType, out string? methodName) {
 			declaration ??= $$"""
 						public static {{typeof(PropertyInfo).FullName}} {{property.Name}} { get; } =
-							Type.{{nameof(Type.GetProperty)}}(
+							typeof({{declaringTypeName}}).{{nameof(Type.GetProperty)}}(
 								"{{property.Name}}",
 								{{getBindingFlagsString(property.IsPublic(), isStatic)}}
 							);
@@ -352,7 +354,7 @@ internal static class Generator {
 								public delegate {{propertyType}} {{delegateName}}({{(isStatic ? string.Empty : $"{declaringTypeName} instance")}});
 
 								public static {{delegateName}} {{methodName}} { get; } =
-									{{property.Name}}.{{nameof(PropertyInfo.GetMethod)}}.{{nameof(MethodInfo.CreateDelegate)}}<{{delegateName}}>();
+									({{delegateName}}){{property.Name}}.{{nameof(PropertyInfo.GetMethod)}}.{{nameof(MethodInfo.CreateDelegate)}}(typeof({{delegateName}}));
 
 						""";
 					break;
@@ -363,7 +365,7 @@ internal static class Generator {
 								public delegate void {{delegateName}}({{(isStatic ? string.Empty : $"{declaringTypeName} instance, ")}}{{propertyType}} value);
 
 								public static {{delegateName}} {{methodName}} { get; } =
-									{{property.Name}}.{{nameof(PropertyInfo.SetMethod)}}.{{nameof(MethodInfo.CreateDelegate)}}<{{delegateName}}>();
+									({{delegateName}}){{property.Name}}.{{nameof(PropertyInfo.SetMethod)}}.{{nameof(MethodInfo.CreateDelegate)}}(typeof({{delegateName}}));
 
 						""";
 					break;
@@ -429,7 +431,7 @@ internal static class Generator {
 		} else {
 			reflectionMemberDeclaration = $$"""
 						public static {{typeof(FieldInfo).FullName}} {{field.Name}} { get; } =
-							Type.{{nameof(Type.GetField)}}(
+							typeof({{declaringType.GetTypeName()}}).{{nameof(Type.GetField)}}(
 								"{{field.Name}}",
 								{{getBindingFlagsString(field.IsPublic, field.IsStatic)}}
 							);
@@ -636,7 +638,7 @@ internal static class Generator {
 				string parameterTypes;
 				if (parameters.Length > 0) {
 					parameterTypes = $$"""
-										types: new {{typeof(Type).FullName}}[] {
+										types: [
 											{{string.Join(
 												",\n\t\t\t\t\t",
 												parameters.Select(x => string.Format(
@@ -645,7 +647,7 @@ internal static class Generator {
 													x.ParameterType.IsByRef ? $".{nameof(Type.MakeByRefType)}()" : string.Empty
 												))
 											)}}
-										}
+										]
 						""";
 				} else {
 					// パラメータがない場合は空配列 (Type.EmptyTypes) を指定
@@ -653,7 +655,7 @@ internal static class Generator {
 				}
 				reflectionMemberDeclaration = $$"""
 							public static {{typeof(MethodInfo).FullName}} {{reflectionMemberName}} { get; } =
-								Type.{{nameof(Type.GetMethod)}}(
+								typeof({{declaringType.GetTypeName()}}).{{nameof(Type.GetMethod)}}(
 									"{{method.Name}}",
 									{{getBindingFlagsString(method.IsPublic, method.IsStatic)}},
 									binder: null,
@@ -665,7 +667,7 @@ internal static class Generator {
 			} else {
 				reflectionMemberDeclaration = $$"""
 							public static {{typeof(MethodInfo).FullName}} {{reflectionMemberName}} { get; } =
-								Type.{{nameof(Type.GetMethod)}}(
+								typeof({{declaringType.GetTypeName()}}).{{nameof(Type.GetMethod)}}(
 									"{{method.Name}}",
 									{{getBindingFlagsString(method.IsPublic, method.IsStatic)}}
 								);
@@ -711,7 +713,7 @@ internal static class Generator {
 				);
 
 				var methodDeclaration = string.Format(
-					"{0}public static {1} {2} {{ get; }} =\n{0}\t{3}.{4}<{1}>();",
+					"{0}public static {1} {2} {{ get; }} =\n{0}\t({1}){3}.{4}(typeof({1}));",
 					indent,
 					delegateTypeName,
 					delegateName,
