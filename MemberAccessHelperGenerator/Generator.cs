@@ -419,7 +419,7 @@ internal static class Generator {
 		var typeName = field.FieldType.GetTypeName();
 		var declaringType = field.DeclaringType!;
 
-		string getter, setter;
+		string? getter, setter;
 		if (field.IsPublic) {
 			var prefix = getMemberAccessPrefix(declaringType, field.IsStatic);
 			getter = $"{prefix}.{field.Name}";
@@ -436,33 +436,46 @@ internal static class Generator {
 
 				""";
 
-			if (field.FieldType.IsVisible) {
+			if (field.IsLiteral) {
+				// const
+				getter = $"{field.FieldType.GetCastString()}ReflectionMembers.{field.Name}.{nameof(PropertyInfo.GetRawConstantValue)}()";
+				setter = null;
+			} else if (field.FieldType.IsVisible) {
+				// Delegate
 				var getDelegateType = field.IsStatic ?
 					typeof(Func<>).MakeGenericType(field.FieldType).GetTypeName() :
 					typeof(Func<,>).MakeGenericType(declaringType, field.FieldType).GetTypeName();
-
-				var setDelegateType = field.IsStatic ?
-					typeof(Action<>).MakeGenericType(field.FieldType).GetTypeName() :
-					typeof(Action<,>).MakeGenericType(declaringType, field.FieldType).GetTypeName();
 
 				reflectionMemberDeclaration += $$"""
 
 							public static {{getDelegateType}} {{field.Name}}_Get { get; } =
 								CreateGetFieldMethod<{{getDelegateType}}>({{field.Name}});
 
-							public static {{setDelegateType}} {{field.Name}}_Set { get; } =
-								CreateSetFieldMethod<{{setDelegateType}}>({{field.Name}});
-
 					""";
 
 				var instance = field.IsStatic ? string.Empty : instancePropertyName;
 				getter = $"ReflectionMembers.{field.Name}_Get({(field.IsStatic ? string.Empty : instancePropertyName)})";
-				setter = $"ReflectionMembers.{field.Name}_Set({(field.IsStatic ? "value" : $"{instancePropertyName}, value")})";
 
+				if (!field.IsInitOnly) {
+					var setDelegateType = field.IsStatic ?
+						typeof(Action<>).MakeGenericType(field.FieldType).GetTypeName() :
+						typeof(Action<,>).MakeGenericType(declaringType, field.FieldType).GetTypeName();
+
+					reflectionMemberDeclaration += $$"""
+
+								public static {{setDelegateType}} {{field.Name}}_Set { get; } =
+									CreateSetFieldMethod<{{setDelegateType}}>({{field.Name}});
+
+						""";
+
+					setter = $"ReflectionMembers.{field.Name}_Set({(field.IsStatic ? "value" : $"{instancePropertyName}, value")})";
+				} else {
+					setter = null;
+				}
 			} else {
+				// Reflection
 				var instance = field.IsStatic ? "null" : instancePropertyName;
-				var cast = field.FieldType.GetCastString();
-				getter = $"{cast}ReflectionMembers.{field.Name}.{nameof(PropertyInfo.GetValue)}({instance})";
+				getter = $"{field.FieldType.GetCastString()}ReflectionMembers.{field.Name}.{nameof(PropertyInfo.GetValue)}({instance})";
 				setter = $"ReflectionMembers.{field.Name}.{nameof(PropertyInfo.SetValue)}({instance}, value)";
 			}
 		}
