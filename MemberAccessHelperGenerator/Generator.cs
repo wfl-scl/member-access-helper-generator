@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 
 namespace MemberAccessHelperGenerator;
 
-internal static class Generator {
+internal class Generator : ConsoleAppBase {
 
 	private const string defaultOutputFolder = @".\Generated";
 	private const string instancePropertyName = "InstanceForHelper";
@@ -34,7 +34,8 @@ internal static class Generator {
 			.ToArray();
 
 
-	public static void Run(
+	[RootCommand]
+	public void Run(
 		[Option("i", "Assembly file(s) or containing folder(s) to generate")] string input,
 		[Option("o", "Output folder", DefaultValue = defaultOutputFolder)] string? output = null,
 		[Option("f", "Regex pattern for filter types")] string? filter = null
@@ -80,6 +81,9 @@ internal static class Generator {
 		output ??= defaultOutputFolder;
 
 		foreach (var type in types) {
+			if (Context.CancellationToken.IsCancellationRequested) {
+				break;
+			}
 			generateSource(type, output);
 		}
 	}
