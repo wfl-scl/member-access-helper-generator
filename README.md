@@ -1,1 +1,2 @@
 # member-access-helper-generator
+非パブリックなメンバーをごにょごにょするためのソースコードを生成するやつ
